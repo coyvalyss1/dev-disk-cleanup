@@ -186,7 +186,7 @@ MIT License - see [LICENSE](LICENSE) file for details.
 
 ## Author
 
-Built by [@coybyron](https://github.com/coybyron) for developers building with AI.
+Built by [@coyvalyss1](https://github.com/coyvalyss1) / Valyss LLC for developers building with AI.
 
 ## Related Projects
 
