@@ -53,7 +53,7 @@ Most developers don't realize they've lost 30-50 GB until their machine slows do
 ### Quick Install (Automatic Scheduling)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/coybyron/dev-disk-cleanup/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/coyvalyss1/dev-disk-cleanup/main/install.sh | bash
 ```
 
 This installs the script to `~/.dev-disk-cleanup/` and sets up automatic scheduling via launchd.
@@ -62,7 +62,7 @@ This installs the script to `~/.dev-disk-cleanup/` and sets up automatic schedul
 
 ```bash
 # Clone the repo
-git clone https://github.com/coybyron/dev-disk-cleanup.git
+git clone https://github.com/coyvalyss1/dev-disk-cleanup.git
 cd dev-disk-cleanup
 
 # Make executable
@@ -190,7 +190,7 @@ Built by [@coyvalyss1](https://github.com/coyvalyss1) / Valyss LLC for developer
 
 ## Related Projects
 
-- [DoMoreWorld](https://domoreworld.com) - Social AI coach for kids
+- [DoMoreWorld](https://domoreworld.com) - AI for purpose, creativity, and connection
 - [Art Ping Pong](https://artpingpong.art) - AI-powered collaborative art game
 
 ---
