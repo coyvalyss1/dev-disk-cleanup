@@ -5,17 +5,19 @@ description: Free disk space on this Mac with dev-disk-cleanup. Use when the dis
 
 # Disk cleanup
 
-The engine is `dev-disk-cleanup.sh` at the root of this skill's repository, normally
-`~/dev-disk-cleanup/dev-disk-cleanup.sh` (this skill folder is symlinked from there).
-Personal settings are sourced from `$DEV_DISK_CLEANUP_CONFIG`, else
+The engine is `dev-disk-cleanup.sh`, two folders above this file once its symlink is
+resolved: the root of a git clone, or `~/.dev-disk-cleanup/` when installed with
+`install.sh`. Settings are sourced from `$DEV_DISK_CLEANUP_CONFIG`, else
 `~/.config/dev-disk-cleanup/config.sh` (see `config.example.sh`).
 
 ## Commands
 
 ```bash
-~/dev-disk-cleanup/dev-disk-cleanup.sh --dry-run --force   # preview every tier; deletes nothing
-~/dev-disk-cleanup/dev-disk-cleanup.sh                     # tier 1, plus tiers 2-3 below THRESHOLD_GB
-~/dev-disk-cleanup/dev-disk-cleanup.sh --force             # all tiers regardless of free space
+ENGINE="$(cd "$(dirname "$(readlink -f <path-to-this-SKILL.md>)")/../.." && pwd)/dev-disk-cleanup.sh"
+"$ENGINE" --dry-run --force   # preview every tier; deletes nothing
+"$ENGINE"                     # tier 1, plus tiers 2-3 below THRESHOLD_GB
+"$ENGINE" --force             # all tiers regardless of free space
+"$ENGINE" --help
 ```
 
 - **"What would it delete?"** Run the dry run and summarize by size; delete nothing.

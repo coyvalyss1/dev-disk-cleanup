@@ -98,9 +98,9 @@ class CleanupTests(unittest.TestCase):
 
     def test_stale_agent_builds_removed_recent_and_unrelated_kept(self):
         tmp_root = self.root / 'tmp'
-        stale = tmp_root / 'DoMoreWorld-old-build'
-        scratch = tmp_root / 'claude-503/-Users-x/session/scratchpad/dd-booking'
-        recent = tmp_root / 'DoMoreWorld-active-build'
+        stale = tmp_root / 'MyApp-old-build'
+        scratch = tmp_root / 'claude-501/-Users-me/session/scratchpad/dd-feature'
+        recent = tmp_root / 'MyApp-active-build'
         unrelated = tmp_root / 'notes'
         for dd in (stale, scratch, recent):
             self.write(str((dd / 'Build/Intermediates.noindex/obj.o').relative_to(self.root)), 'x' * 4096)

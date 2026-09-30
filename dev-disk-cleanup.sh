@@ -42,6 +42,7 @@ for arg in "$@"; do
     --force)   FORCE=true ;;
     --dry-run) DRY_RUN=true ;;
     --backup-only) BACKUP_ONLY=true ;;
+    -h|--help) sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "Unknown argument: $arg" >&2; exit 64 ;;
   esac
 done

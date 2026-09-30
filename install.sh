@@ -1,93 +1,91 @@
 #!/bin/bash
-# Install dev-disk-cleanup with automatic scheduling via launchd
-# Runs weekly + checks on login if space is low
+# Install dev-disk-cleanup with a daily launchd job.
+#
+# Works from a clone (./install.sh) or piped from curl, in which case the files
+# are downloaded from GitHub. Safe to re-run; an existing config is never replaced.
 
-set -e
+set -euo pipefail
 
-SCRIPT_NAME="dev-disk-cleanup.sh"
+REPO_RAW="https://raw.githubusercontent.com/coyvalyss1/dev-disk-cleanup/main"
 INSTALL_DIR="$HOME/.dev-disk-cleanup"
-PLIST_PATH="$HOME/Library/LaunchAgents/com.dev-disk-cleanup.plist"
+CONFIG_FILE="$HOME/.config/dev-disk-cleanup/config.sh"
+LOG_DIR="$HOME/Library/Logs/dev-disk-cleanup"
+LABEL="com.dev-disk-cleanup"
+PLIST_PATH="$HOME/Library/LaunchAgents/$LABEL.plist"
+FILES=(dev-disk-cleanup.sh config.example.sh skills/disk-cleanup/SKILL.md)
 
-echo "🧹 Installing dev-disk-cleanup..."
-echo ""
-
-# Create install directory
-mkdir -p "$INSTALL_DIR"
-
-# Copy the cleanup script
-if [ -f "$SCRIPT_NAME" ]; then
-  cp "$SCRIPT_NAME" "$INSTALL_DIR/"
-  chmod +x "$INSTALL_DIR/$SCRIPT_NAME"
-  echo "✅ Installed script to: $INSTALL_DIR/$SCRIPT_NAME"
-else
-  echo "❌ Error: $SCRIPT_NAME not found in current directory"
-  exit 1
+SOURCE_DIR=""
+if [ -n "${BASH_SOURCE[0]:-}" ] && [ -f "$(dirname "${BASH_SOURCE[0]}")/dev-disk-cleanup.sh" ]; then
+  SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 fi
 
-# Create launchd plist for automatic scheduling
-cat > "$PLIST_PATH" << EOF
+echo "Installing dev-disk-cleanup to $INSTALL_DIR"
+for f in "${FILES[@]}"; do
+  mkdir -p "$INSTALL_DIR/$(dirname "$f")"
+  if [ -n "$SOURCE_DIR" ]; then
+    cp "$SOURCE_DIR/$f" "$INSTALL_DIR/$f"
+  else
+    curl -fsSL "$REPO_RAW/$f" -o "$INSTALL_DIR/$f"
+  fi
+done
+chmod +x "$INSTALL_DIR/dev-disk-cleanup.sh"
+
+if [ -f "$CONFIG_FILE" ]; then
+  echo "Keeping existing config: $CONFIG_FILE"
+else
+  mkdir -p "$(dirname "$CONFIG_FILE")"
+  cp "$INSTALL_DIR/config.example.sh" "$CONFIG_FILE"
+  echo "Created config: $CONFIG_FILE"
+fi
+
+# Offer the skill to AI coding CLIs that are present.
+for skills_dir in "$HOME/.claude/skills" "$HOME/.codex/skills"; do
+  [ -d "$(dirname "$skills_dir")" ] || continue
+  mkdir -p "$skills_dir"
+  if [ -e "$skills_dir/disk-cleanup" ] && [ ! -L "$skills_dir/disk-cleanup" ]; then
+    echo "Skipping $skills_dir/disk-cleanup (already exists)"
+  else
+    ln -sfn "$INSTALL_DIR/skills/disk-cleanup" "$skills_dir/disk-cleanup"
+    echo "Linked skill: $skills_dir/disk-cleanup"
+  fi
+done
+
+mkdir -p "$LOG_DIR" "$(dirname "$PLIST_PATH")"
+cat > "$PLIST_PATH" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
   <key>Label</key>
-  <string>com.dev-disk-cleanup</string>
-  
+  <string>$LABEL</string>
   <key>ProgramArguments</key>
   <array>
-    <string>$INSTALL_DIR/$SCRIPT_NAME</string>
+    <string>$INSTALL_DIR/dev-disk-cleanup.sh</string>
   </array>
-  
   <key>StartInterval</key>
-  <integer>604800</integer>
-  
+  <integer>86400</integer>
   <key>RunAtLoad</key>
   <true/>
-  
   <key>StandardOutPath</key>
-  <string>$INSTALL_DIR/stdout.log</string>
-  
+  <string>$LOG_DIR/launchd-stdout.log</string>
   <key>StandardErrorPath</key>
-  <string>$INSTALL_DIR/stderr.log</string>
+  <string>$LOG_DIR/launchd-stderr.log</string>
 </dict>
 </plist>
 EOF
 
-echo "✅ Created launchd plist: $PLIST_PATH"
-echo ""
+GUI="gui/$(id -u)"
+launchctl bootout "$GUI/$LABEL" 2>/dev/null || true
+launchctl bootstrap "$GUI" "$PLIST_PATH"
 
-# Load the launchd agent
-launchctl unload "$PLIST_PATH" 2>/dev/null || true
-if launchctl load "$PLIST_PATH"; then
-  echo "✅ Automatic disk cleanup enabled!"
-  echo ""
-  echo "📋 Configuration:"
-  echo "  • Runs every 7 days (light cache cleanup)"
-  echo "  • Checks on login (full cleanup if below 50 GB free)"
-  echo "  • Keeps recent builds (modified within 14 days)"
-  echo "  • Logs: $INSTALL_DIR/cleanup.log"
-  echo ""
-  echo "🔧 Manual Commands:"
-  echo "  Preview what would be cleaned:"
-  echo "    ~/.dev-disk-cleanup/dev-disk-cleanup.sh --dry-run"
-  echo ""
-  echo "  Force cleanup now:"
-  echo "    ~/.dev-disk-cleanup/dev-disk-cleanup.sh --force"
-  echo ""
-  echo "  Check status:"
-  echo "    launchctl list | grep dev-disk-cleanup"
-  echo ""
-  echo "  View logs:"
-  echo "    tail -f ~/.dev-disk-cleanup/cleanup.log"
-  echo ""
-  echo "  Disable automatic cleanup:"
-  echo "    launchctl unload ~/Library/LaunchAgents/com.dev-disk-cleanup.plist"
-  echo ""
-  echo "✅ Installation complete!"
-else
-  echo "❌ Failed to load launchd agent"
-  echo ""
-  echo "You can still run manual cleanups:"
-  echo "  ~/.dev-disk-cleanup/dev-disk-cleanup.sh"
-  exit 1
-fi
+cat <<EOF
+
+Installed. A first run has started; after that it runs daily and at login.
+  Tier 1 (caches, stale agent builds) runs every time; tiers 2-3 only below
+  THRESHOLD_GB free (default 50) or with --force.
+
+  Preview:   $INSTALL_DIR/dev-disk-cleanup.sh --dry-run --force
+  Settings:  $CONFIG_FILE
+  Log:       $LOG_DIR/disk-cleanup.log
+  Disable:   launchctl bootout $GUI/$LABEL
+EOF

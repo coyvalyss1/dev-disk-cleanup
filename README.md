@@ -1,198 +1,156 @@
 # dev-disk-cleanup
 
-> Smart disk space cleanup for macOS developers. Safely reclaims gigabytes of space from caches and build artifacts while preserving your active work.
-
-Built for developers working with AI tools who accumulate build artifacts, browser caches, and simulator images faster than traditional workflows.
+> Tiered disk cleanup for macOS developer machines. Reclaims caches and stale build output, including the builds AI coding agents leave behind, while keeping your active work.
 
 ## Problem
 
-When you're building with AI assistants, scaffolding prototypes, and working across multiple projects, your Mac fills up fast:
+Building with AI coding agents fills a Mac faster than it used to:
 
-- Xcode DerivedData builds pile up (5-10 GB per project)
-- Chrome caches across profiles (5-10 GB)
-- npm, Homebrew, and package manager caches (3-5 GB)
-- iOS simulators and app updater caches (2-5 GB each)
-- Adobe and other app caches (50+ GB)
+- Agents build iOS apps with `xcodebuild -derivedDataPath /tmp/...` or into their own scratch folders. At 3-4 GB per build, those copies bypass Xcode's DerivedData folder, so nothing else ever removes them.
+- Xcode DerivedData, simulators, and per-version iOS DeviceSupport symbols (about 6 GB each) pile up.
+- Browser, editor, AI-tool, and package-manager caches grow quietly.
 
-Most developers don't realize they've lost 30-50 GB until their machine slows down or Xcode complains.
+Losing 30 GB in a day is possible; a periodic cleanup that doesn't know about agent builds can't keep up.
 
-## Solution
+## What it does
 
-`dev-disk-cleanup` is a smart, conservative cleanup script that:
+- **Keeps active work:** recent DerivedData (14 days by default) and any agent build touched in the last 24 hours or used by a running process are kept.
+- **Tiered:** light cache cleanup on every run; deeper cleanup only below a free-space threshold (50 GB by default) or with `--force`.
+- **Dry run:** `--dry-run` shows exactly what would go, with sizes.
+- **Configurable:** your own extra targets and thresholds live in a config file, never in the script.
+- **Works from AI CLIs:** ships a `disk-cleanup` skill for Claude Code and Codex.
+- **No dependencies:** bash and standard macOS tools.
 
-✅ **Preserves active work** — keeps recent builds (modified within 14 days)  
-✅ **Tiered cleanup** — light weekly cache cleanup, deeper cleanup only when needed  
-✅ **Threshold-based** — runs full cleanup only when free space drops below 50 GB  
-✅ **Dry-run mode** — see exactly what would be cleaned before committing  
-✅ **Zero dependencies** — pure bash, works on any Mac out of the box  
-✅ **Automatic scheduling** — runs via launchd weekly + on login
+## What gets cleaned
 
-## What Gets Cleaned
+### Tier 1: every run
+- **Stale agent builds:** DerivedData-shaped folders under `/private/tmp` (including agent scratchpads) idle for 24 hours, or 12 hours below the threshold
+- **Browsers:** Chrome cache and code cache (all profiles), Chrome's on-device AI model (re-downloads if needed), crash reports
+- **Editors and AI tools:** Cursor, Claude Desktop, and Codex caches and logs; Slack caches
+- **Package managers:** npm, Homebrew downloads, SwiftPM repositories, pip, uv, Puppeteer, Playwright, node-gyp, Firebase
+- **Other apps:** Adobe caches and logs, Spotify cache, Signal updater, Python bytecode cache
+- Anything you list in `EXTRA_CACHE_TARGETS`
 
-### Tier 1 (Always safe, runs weekly)
-- **Browser caches**: Chrome, Chromium (all profiles)
-- **App updaters**: Signal, Ledger, Spotify
-- **Package managers**: npm, Homebrew downloads, SwiftPM repos
-- **Dev tools**: node-gyp, Playwright
-- **Adobe caches**: Can grow to 50+ GB
+### Tier 2: below threshold or `--force`
+- **Xcode:** DerivedData older than 14 days, ModuleCache, unavailable simulators, simulators unused for 30 days
+- **Cursor:** cache files not accessed in 14 days
+- **iOS DeviceSupport:** older iOS versions for a device model once a newer one exists (kept for 30 days)
+- **Simulator runtimes** unused for 60 days (Xcode re-downloads them)
+- **Ollama:** blobs no model manifest references (skipped if manifests can't be read)
+- Optional: installers (`.dmg`, `.xip`) in Downloads, if `CLEAN_DOWNLOADED_INSTALLERS=true`
+- Anything you list in `EXTRA_BUILD_TARGETS`
+- Optional: your `ARCHIVE_HOOK prune` step (see Configuration)
 
-### Tier 2 (Only when below 50 GB or `--force`)
-- **Xcode DerivedData**: Stale builds (older than 14 days, keeps recent)
-- **Editor caches**: Cursor, VS Code (stale cache files only)
-- **iOS Simulators**: Unavailable/broken simulators only
+### Tier 3: below threshold or `--force`
+- Claude downloads older than 14 days (only when that folder exceeds 50 MB)
 
-### What's NEVER Touched
-- Source code, git repos, working files
-- `node_modules/` directories
-- `.env`, credentials, API keys
-- iCloud data, Documents, Desktop
-- Active builds (modified within 14 days)
+### Never touched
+- Source code, git repositories, working files, `node_modules/`
+- `.env` files, credentials, keys
+- Documents, Desktop, iCloud Drive
+- Spotlight's index and iCloud's CloudKit cache (deleting them can corrupt search or sync state)
+- Chat transcripts, unless your own `ARCHIVE_HOOK` prunes them after verifying a backup
 
-## Installation
-
-### Quick Install (Automatic Scheduling)
+## Install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/coybyron/dev-disk-cleanup/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/coyvalyss1/dev-disk-cleanup/main/install.sh | bash
 ```
 
-This installs the script to `~/.dev-disk-cleanup/` and sets up automatic scheduling via launchd.
-
-### Manual Install
+or from a clone:
 
 ```bash
-# Clone the repo
-git clone https://github.com/coybyron/dev-disk-cleanup.git
+git clone https://github.com/coyvalyss1/dev-disk-cleanup.git
 cd dev-disk-cleanup
-
-# Make executable
-chmod +x dev-disk-cleanup.sh
-
-# Run directly
-./dev-disk-cleanup.sh --dry-run  # Preview what would be cleaned
-./dev-disk-cleanup.sh            # Run cleanup
+./dev-disk-cleanup.sh --dry-run --force   # preview first
+./install.sh
 ```
+
+The installer copies the script to `~/.dev-disk-cleanup/`, creates `~/.config/dev-disk-cleanup/config.sh` from the example if you don't have one, links the `disk-cleanup` skill into `~/.claude/skills` and `~/.codex/skills` if those tools are installed, and loads a launchd job that runs **daily and at login**. Loading the job starts one run right away.
 
 ## Usage
 
-### Automatic Mode (After Install)
-- Runs every 7 days (light cache cleanup)
-- Checks on every login (full cleanup if below 50 GB free)
-- No action required
-
-### Manual Commands
-
 ```bash
-# Preview what would be cleaned (safe, no changes)
-~/.dev-disk-cleanup/dev-disk-cleanup.sh --dry-run
-
-# Run normal cleanup (tier 1, or tier 2 if below 50 GB)
-~/.dev-disk-cleanup/dev-disk-cleanup.sh
-
-# Force full cleanup regardless of free space
-~/.dev-disk-cleanup/dev-disk-cleanup.sh --force
-
-# Show help
+~/.dev-disk-cleanup/dev-disk-cleanup.sh --dry-run --force  # preview every tier; deletes nothing
+~/.dev-disk-cleanup/dev-disk-cleanup.sh                    # tier 1, plus tiers 2-3 below threshold
+~/.dev-disk-cleanup/dev-disk-cleanup.sh --force            # all tiers now
 ~/.dev-disk-cleanup/dev-disk-cleanup.sh --help
 
-# View logs
-tail -f ~/.dev-disk-cleanup/cleanup.log
+tail -f ~/Library/Logs/dev-disk-cleanup/disk-cleanup.log
 ```
 
-### Management
+Each run logs free space before and after. `Cleanup PARTIAL` (exit 1) means a step failed; the lines above it say which.
+
+### Managing the schedule
 
 ```bash
-# Check if automatic cleanup is running
-launchctl list | grep dev-disk-cleanup
+launchctl print gui/$(id -u)/com.dev-disk-cleanup | grep -E 'runs|last exit'
+launchctl bootout gui/$(id -u)/com.dev-disk-cleanup                                  # disable
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.dev-disk-cleanup.plist   # re-enable
 
-# Disable automatic cleanup
-launchctl unload ~/Library/LaunchAgents/com.dev-disk-cleanup.plist
-
-# Re-enable automatic cleanup
-launchctl load ~/Library/LaunchAgents/com.dev-disk-cleanup.plist
-
-# Uninstall completely
-launchctl unload ~/Library/LaunchAgents/com.dev-disk-cleanup.plist
+# Uninstall
+launchctl bootout gui/$(id -u)/com.dev-disk-cleanup
 rm ~/Library/LaunchAgents/com.dev-disk-cleanup.plist
-rm -rf ~/.dev-disk-cleanup
+rm -rf ~/.dev-disk-cleanup ~/.config/dev-disk-cleanup
 ```
 
 ## Configuration
 
-Edit `~/.dev-disk-cleanup/dev-disk-cleanup.sh` to customize:
+Settings are a sourced shell file: `$DEV_DISK_CLEANUP_CONFIG`, else `~/.config/dev-disk-cleanup/config.sh`. Every setting is optional; see [`config.example.sh`](config.example.sh).
 
 ```bash
-THRESHOLD_GB=50    # Trigger tier 2 cleanup when below this (GB)
-STALE_DAYS=14      # How old builds must be to clean (days)
+THRESHOLD_GB=50                 # run tiers 2-3 below this much free space
+DERIVED_DATA_STALE_DAYS=14      # keep DerivedData touched within this many days
+CLEAN_DOWNLOADED_INSTALLERS=false
+EXTRA_CACHE_TARGETS=("$HOME/Library/Caches/com.example.app|Example app cache")
+EXTRA_BUILD_TARGETS=("$HOME/code/my-app/dist|my-app build output")
+ARCHIVE_HOOK="$HOME/bin/my-chat-archive-hook.sh"
 ```
 
-## Typical Results
+`ARCHIVE_HOOK` is for AI chat retention. It's called as `backup` or `prune [--dry-run]` and must delete only chats it has verified in its own backup; a nonzero exit marks the run partial.
 
-### Light Cleanup (Tier 1)
-```
-Adobe caches: 518 MB freed
-Chrome caches: 4.0 GB freed
-Homebrew downloads: 258 MB freed
-npm cache: 2.2 GB freed
-SwiftPM repos: 403 MB freed
-──────────────────────────
-Total: ~8 GB recovered
-```
+Keeping the config outside the script means you can update the script without losing your settings, and keep the config in your own dotfiles repo.
 
-### Full Cleanup (Tier 1 + Tier 2)
+## Using it from Claude Code or Codex
+
+The installer links `skills/disk-cleanup` into each CLI's skills folder. Then ask "I'm out of disk space" or "did the cleanup run?" and the agent will preview, run, check the schedule, and measure what's filling the disk, without deleting system-managed data like the Spotlight index.
+
+## Typical results
+
+From the author's machine, September 2026:
+
 ```
-[Tier 1 cleanup as above]
-Stale DerivedData: 7.6 GB freed
-Cursor stale caches: 1.2 GB freed
-──────────────────────────
-Total: ~17 GB recovered
+Stale agent builds (two iOS builds in /tmp):  6.7 GB
+Superseded iOS DeviceSupport:                  5.7 GB
+Chrome on-device AI model:                     4.2 GB
+pip + Python bytecode caches:                  2.1 GB
 ```
 
-Active builds preserved, so next compile is fast.
+## Tests
 
-## Why This Tool?
+```bash
+python3 -m unittest discover -s tests
+```
 
-Existing tools like CleanMyMac are either:
-- **Paid** ($30-100/year)
-- **Too aggressive** (delete everything, slow down builds)
-- **Not dev-aware** (don't understand DerivedData, npm caches, etc.)
-
-`dev-disk-cleanup` is:
-- **Free and open source** (MIT license)
-- **Conservative** (keeps recent builds, only cleans stale artifacts)
-- **Dev-context aware** (knows what's safe to delete and what's not)
-- **Performance-conscious** (preserves active work to keep builds fast)
+The tests run the script against a throwaway directory and never touch your real home folder.
 
 ## Requirements
 
-- macOS 10.14+ (Mojave or later)
-- Bash 3.2+ (pre-installed on macOS)
-- Optional: Xcode (for DerivedData cleanup)
-- Optional: npm (for npm cache cleanup)
+- macOS 12 or later, with the pre-installed bash 3.2
+- Optional: Xcode (DerivedData, simulators, runtimes), npm, Ollama
 
 ## Contributing
 
-Contributions welcome! If you have ideas for additional safe cleanup targets or improvements:
-
-1. Fork the repo
-2. Create a feature branch (`git checkout -b feature/new-target`)
-3. Commit your changes (`git commit -m 'Add cleanup for X'`)
-4. Push to the branch (`git push origin feature/new-target`)
-5. Open a Pull Request
+Ideas for new safe cleanup targets are welcome: open an issue or a pull request with the path, what creates it, and why it's safe to delete.
 
 ## License
 
-MIT License - see [LICENSE](LICENSE) file for details.
+MIT; see [LICENSE](LICENSE).
 
 ## Author
 
-Built by [@coyvalyss1](https://github.com/coyvalyss1) / Valyss LLC for developers building with AI.
+Built by [@coyvalyss1](https://github.com/coyvalyss1) at Valyss LLC, for developers building with AI. Other Valyss tools:
 
-## Related Projects
-
-- [DoMoreWorld](https://domoreworld.com) - Social AI coach for kids
-- [Art Ping Pong](https://artpingpong.art) - AI-powered collaborative art game
-
----
-
-**Note**: Always run with `--dry-run` first to preview what would be cleaned. This tool is conservative by design, but your disk space situation is unique.
+- [model-matchmaker](https://github.com/coyvalyss1/model-matchmaker): routes prompts to the right model tier in Cursor and Claude Code
+- [cursor-toolkit](https://github.com/coyvalyss1/cursor-toolkit): Cursor rules, skills, and best practices
+- [multi-product-context](https://github.com/coyvalyss1/multi-product-context): instant context for AI agents in multi-product workspaces
