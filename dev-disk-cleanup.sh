@@ -20,6 +20,7 @@ export PATH="$HOME/.local/bin:/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/us
 LOG_DIR="$HOME/Library/Logs/dev-disk-cleanup"
 THRESHOLD_GB=50
 DERIVED_DATA_STALE_DAYS=14
+DERIVED_DATA_PRIMARY_PROJECTS=()    # project folders you build in Xcode; other DerivedData counts as agent builds
 CLEAN_DOWNLOADED_INSTALLERS=false   # delete ~/Downloads/*.dmg and *.xip in tier 2
 EXTRA_CACHE_TARGETS=()              # "path|label" entries cleaned in tier 1
 EXTRA_BUILD_TARGETS=()              # "path|label" entries cleaned in tier 2
@@ -387,23 +388,48 @@ if $FORCE || $BELOW_THRESHOLD; then
   STALE_DAYS=$DERIVED_DATA_STALE_DAYS
   log "  Keeping recent DerivedData per project; cleaning entries older than ${STALE_DAYS} days"
 
+  # Agents that open a git worktree in Xcode get their own DerivedData folder
+  # (3-10 GiB each) under the normal location. With DERIVED_DATA_PRIMARY_PROJECTS
+  # set, builds of any other project fall under the agent-build idle window, as
+  # do builds whose project no longer exists.
+  agent_hours=24
+  $BELOW_THRESHOLD && agent_hours=12
+
   for dd in "$HOME/Library/Developer/Xcode/DerivedData/"*/; do
     [ -d "$dd" ] || continue
+    dd="${dd%/}"
     basename_dd=$(basename "$dd")
     case "$basename_dd" in
       ModuleCache.noindex|SymbolCache.noindex|SDKStatCaches.noindex|CompilationCache.noindex) continue ;;
     esac
 
-    # Check modification time — keep anything touched in the last STALE_DAYS days
+    workspace=$(/usr/libexec/PlistBuddy -c "Print :WorkspacePath" "$dd/info.plist" 2>/dev/null || true)
+    kind="stale"
+    keep_secs=$((STALE_DAYS * 86400))
+    keep_label="${STALE_DAYS} days"
+    if [ -z "$workspace" ] || [ ! -e "$workspace" ]; then
+      kind="project gone"
+    elif [ ${#DERIVED_DATA_PRIMARY_PROJECTS[@]} -gt 0 ]; then
+      kind="agent build"
+      for project in "${DERIVED_DATA_PRIMARY_PROJECTS[@]}"; do
+        [ "$(dirname "$workspace")" = "${project%/}" ] && kind="stale"
+      done
+    fi
+    if [ "$kind" != "stale" ]; then
+      keep_secs=$((agent_hours * 3600))
+      keep_label="${agent_hours}h"
+    fi
+
+    # Check modification time — keep anything touched within the window
     last_modified=$(find "$dd" -maxdepth 1 -type d -print0 2>/dev/null | xargs -0 stat -f '%m' 2>/dev/null | sort -rn | head -1)
     now=$(date +%s)
-    cutoff=$((now - STALE_DAYS * 86400))
+    cutoff=$((now - keep_secs))
 
     if [ -n "$last_modified" ] && [ "$last_modified" -gt "$cutoff" ]; then
       size_mb=$(dir_size_mb "$dd")
-      log "  KEEPING DerivedData/$basename_dd (${size_mb} MB) — modified within ${STALE_DAYS} days"
+      log "  KEEPING DerivedData/$basename_dd (${size_mb} MB) — modified within ${keep_label}"
     else
-      clean_target "$dd" "DerivedData/$basename_dd (stale)"
+      clean_target "$dd" "DerivedData/$basename_dd ($kind)"
     fi
   done
 
@@ -420,7 +446,7 @@ if $FORCE || $BELOW_THRESHOLD; then
       if ! $DRY_RUN; then
         rm -f "$f"
       fi
-    done < <(find "$cursor_cache_dir" -type f -atime +${STALE_DAYS} -print0 2>/dev/null)
+    done < <(find "$cursor_cache_dir" -type f -atime +14 -print0 2>/dev/null)
     if [ "$stale_count" -gt 0 ]; then
       stale_mb=$((stale_bytes / 1048576))
       if $DRY_RUN; then

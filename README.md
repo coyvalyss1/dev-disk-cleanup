@@ -32,7 +32,7 @@ Losing 30 GB in a day is possible; a periodic cleanup that doesn't know about ag
 - Anything you list in `EXTRA_CACHE_TARGETS`
 
 ### Tier 2: below threshold or `--force`
-- **Xcode:** DerivedData older than 14 days, ModuleCache, unavailable simulators, simulators unused for 30 days
+- **Xcode:** DerivedData older than 14 days; DerivedData idle 24 hours (12 below the threshold) when its project no longer exists or isn't in `DERIVED_DATA_PRIMARY_PROJECTS` (e.g. agent worktrees); ModuleCache, unavailable simulators, simulators unused for 30 days
 - **Cursor:** cache files not accessed in 14 days
 - **iOS DeviceSupport:** older iOS versions for a device model once a newer one exists (kept for 30 days)
 - **Simulator runtimes** unused for 60 days (Xcode re-downloads them)
@@ -101,6 +101,7 @@ Settings are a sourced shell file: `$DEV_DISK_CLEANUP_CONFIG`, else `~/.config/d
 ```bash
 THRESHOLD_GB=50                 # run tiers 2-3 below this much free space
 DERIVED_DATA_STALE_DAYS=14      # keep DerivedData touched within this many days
+DERIVED_DATA_PRIMARY_PROJECTS=("$HOME/code/MyApp")  # other projects' DerivedData counts as agent builds
 CLEAN_DOWNLOADED_INSTALLERS=false
 EXTRA_CACHE_TARGETS=("$HOME/Library/Caches/com.example.app|Example app cache")
 EXTRA_BUILD_TARGETS=("$HOME/code/my-app/dist|my-app build output")

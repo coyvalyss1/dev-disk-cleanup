@@ -7,6 +7,13 @@ THRESHOLD_GB=50
 # Keep Xcode DerivedData touched within this many days.
 DERIVED_DATA_STALE_DAYS=14
 
+# Project folders you build in Xcode yourself. When set, DerivedData for any
+# other project (e.g. an agent's git worktree) is removed after 24h idle, 12h
+# below the threshold. DerivedData whose project no longer exists always is.
+DERIVED_DATA_PRIMARY_PROJECTS=(
+  # "$HOME/code/MyApp"
+)
+
 # Delete ~/Downloads/*.dmg and *.xip during tier 2.
 CLEAN_DOWNLOADED_INSTALLERS=false
 

@@ -113,6 +113,40 @@ class CleanupTests(unittest.TestCase):
         self.assertTrue(recent.exists())
         self.assertTrue(unrelated.exists())
 
+    def derived_data(self, name, workspace=None):
+        dd = self.root / 'Library/Developer/Xcode/DerivedData' / name
+        self.write(str((dd / 'Build/obj.o').relative_to(self.root)), 'x' * 4096)
+        if workspace:
+            subprocess.run(['plutil', '-create', 'xml1', str(dd / 'info.plist')], check=True)
+            subprocess.run(['plutil', '-insert', 'WorkspacePath', '-string', str(workspace),
+                            str(dd / 'info.plist')], check=True)
+        return dd
+
+    def test_derived_data_outside_primary_projects_uses_agent_window(self):
+        main_ws = self.write('code/MyApp/MyApp.xcodeproj/project.pbxproj', '').parent
+        worktree_ws = self.write('code/MyApp-feature/MyApp.xcodeproj/project.pbxproj', '').parent
+        main = self.derived_data('MyApp-main', main_ws)
+        worktree = self.derived_data('MyApp-worktree', worktree_ws)
+        fresh_worktree = self.derived_data('MyApp-worktree-fresh', worktree_ws)
+        gone = self.derived_data('MyApp-gone', self.root / 'code/Deleted/MyApp.xcodeproj')
+        no_plist = self.derived_data('MyApp-noplist')
+        for dd in (main, worktree, gone, no_plist):
+            self.age(dd, 2)
+        self.config(f'DERIVED_DATA_PRIMARY_PROJECTS=("{main_ws.parent}")\n')
+        self.run_cleanup('--force')
+        self.assertTrue(main.exists())             # primary: 14-day window
+        self.assertFalse(worktree.exists())        # other project: 24h window
+        self.assertTrue(fresh_worktree.exists())
+        self.assertFalse(gone.exists())
+        self.assertFalse(no_plist.exists())
+
+    def test_derived_data_without_primary_projects_keeps_14_day_window(self):
+        ws = self.write('code/MyApp/MyApp.xcodeproj/project.pbxproj', '').parent
+        dd = self.derived_data('MyApp-any', ws)
+        self.age(dd, 2)
+        self.run_cleanup('--force')
+        self.assertTrue(dd.exists())
+
     def test_device_support_keeps_newest_per_model(self):
         ds = 'Library/Developer/Xcode/iOS DeviceSupport'
         newest = self.write(f'{ds}/iPhone15,2 26.6 (23G71)/Symbols/a', 'x').parents[1]
