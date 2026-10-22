@@ -251,6 +251,40 @@ clean_superseded_device_support() {
   done < <(ls -t "$ds")
 }
 
+# Codex self-updates into packages/<name>/releases/<version>/ (~300 MB each)
+# and never removes old versions. Keep the one `current` points at, the version
+# before it (rollback) and any newer staged update; skip anything a running
+# process still uses.
+clean_superseded_codex_releases() {
+  local pkg releases current version
+  local -a older
+  for pkg in "$HOME/.codex/packages"/*/; do
+    pkg="${pkg%/}"
+    releases="$pkg/releases"
+    [ -d "$releases" ] || continue
+    current=$(readlink "$pkg/current" 2>/dev/null) || current=""
+    current="${current%/}"
+    current="${current##*/}"
+    if [ -z "$current" ] || [ ! -d "$releases/$current" ]; then
+      log "  Skipping Codex releases in $pkg: cannot read the current version"
+      continue
+    fi
+    older=()
+    while IFS= read -r version; do
+      [ "$version" = "$current" ] && break
+      older+=("$version")
+    done < <(ls "$releases" | sort -V)
+    [ "${#older[@]}" -gt 1 ] || continue
+    for version in "${older[@]:0:${#older[@]}-1}"; do
+      if pgrep -f -- "$releases/$version/" >/dev/null 2>&1; then
+        log "  KEEPING Codex release $version (in use by a running process)"
+        continue
+      fi
+      clean_target "$releases/$version" "superseded Codex release ($(basename "$pkg") $version)"
+    done
+  done
+}
+
 # Rotate log if over 1 MB
 if [ -f "$LOG_FILE" ] && [ "$(stat -f%z "$LOG_FILE" 2>/dev/null || echo 0)" -gt 1048576 ]; then
   mv "$LOG_FILE" "$LOG_FILE.old"
@@ -343,6 +377,7 @@ clean_target "$HOME/Library/Application Support/Claude/GPUCache" "Claude GPU cac
 # scratch/cache data and do not include the active standalone installation.
 clean_target "$HOME/.codex/cache" "Codex cache"
 clean_target "$HOME/.codex/.tmp" "Codex temporary files"
+clean_superseded_codex_releases
 
 clean_target "$HOME/.cache/uv" "uv package cache"
 clean_target "$HOME/Library/Caches/pip" "pip cache"

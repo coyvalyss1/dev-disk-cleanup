@@ -27,6 +27,7 @@ Losing 30 GB in a day is possible; a periodic cleanup that doesn't know about ag
 - **Stale agent builds:** DerivedData-shaped folders under `/private/tmp` (including agent scratchpads) idle for 24 hours, or 12 hours below the threshold
 - **Browsers:** Chrome cache and code cache (all profiles), Chrome's on-device AI model (re-downloads if needed), crash reports
 - **Editors and AI tools:** Cursor, Claude Desktop, and Codex caches and logs; Slack caches
+- **Old Codex versions:** self-update releases older than the current one and the one before it (newer staged updates and versions a running process uses are kept)
 - **Package managers:** npm, Homebrew downloads, SwiftPM repositories, pip, uv, Puppeteer, Playwright, node-gyp, Firebase
 - **Other apps:** Adobe caches and logs, Spotify cache, Signal updater, Python bytecode cache
 - Anything you list in `EXTRA_CACHE_TARGETS`

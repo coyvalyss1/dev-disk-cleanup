@@ -30,7 +30,7 @@ ENGINE="$(cd "$(dirname "$(readlink -f <path-to-this-SKILL.md>)")/../.." && pwd)
 1. **Every run:** browser, editor, AI-tool, and package-manager caches; stale agent
    builds (Xcode DerivedData created with `-derivedDataPath` under `/private/tmp` or agent
    scratchpads, idle 24h, or 12h below threshold, and not used by a running process);
-   `EXTRA_CACHE_TARGETS`.
+   Codex releases older than the current one and the one before it; `EXTRA_CACHE_TARGETS`.
 2. **Below threshold or `--force`:** stale Xcode DerivedData (default 14 days), simulators
    unused 30 days, superseded iOS DeviceSupport, simulator runtimes unused 60 days,
    unreferenced Ollama blobs, `EXTRA_BUILD_TARGETS`, optional installers in Downloads,

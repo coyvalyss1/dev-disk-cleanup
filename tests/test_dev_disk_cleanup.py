@@ -163,6 +163,17 @@ class CleanupTests(unittest.TestCase):
         self.assertTrue(recent.exists())
         self.assertTrue(only.exists())
 
+    def test_codex_keeps_current_and_previous_release(self):
+        rel = self.root / '.codex/packages/standalone/releases'
+        for v in ('0.9.0', '0.10.0', '0.10.1', '0.11.0'):
+            self.write(f'.codex/packages/standalone/releases/{v}/bin/codex', 'x')
+        (rel.parent / 'current').symlink_to(rel / '0.10.1')
+        self.write('.codex/packages/broken/releases/0.1.0/bin/codex', 'x')
+        self.run_cleanup()
+        # 0.9.0 is superseded; 0.10.0 is the rollback; 0.11.0 is a staged update.
+        self.assertEqual(sorted(p.name for p in rel.iterdir()), ['0.10.0', '0.10.1', '0.11.0'])
+        self.assertTrue((self.root / '.codex/packages/broken/releases/0.1.0').exists())
+
     def run_blob_check(self, grep_fails=False):
         start = SOURCE.index('clean_orphaned_ollama_blobs()')
         end = SOURCE.index('clean_stale_simulators()', start)
